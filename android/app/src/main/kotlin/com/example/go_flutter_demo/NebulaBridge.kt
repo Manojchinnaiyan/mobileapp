@@ -2,6 +2,8 @@ package com.example.go_flutter_demo
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.util.Log
 import java.io.File
@@ -65,6 +67,33 @@ class NebulaBridge(private val context: Context) {
     // Check if VPN is running
     fun isRunning(): Boolean {
         return NebulaVpnService.isRunning()
+    }
+    
+    // Check the actual connection status
+    fun checkConnectionStatus(): Boolean {
+        // Check if our service reports running
+        val serviceRunning = NebulaVpnService.isRunning()
+        Log.d(TAG, "Service running: $serviceRunning")
+        
+        // Also check if the VPN interface is active in the system
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networks = connectivityManager.allNetworks
+        
+        for (network in networks) {
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            if (capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                Log.d(TAG, "VPN interface found in system")
+                return true
+            }
+        }
+        
+        // If VPN interface is not active, but our service thinks it's running, stop the service
+        if (serviceRunning) {
+            Log.d(TAG, "VPN interface not found but service running, stopping service")
+            stopNebula()
+        }
+        
+        return false
     }
     
     // Test configuration

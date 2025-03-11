@@ -56,6 +56,17 @@ class NebulaBridge {
     }
   }
 
+  /// Checks the current connection status of the VPN
+  Future<bool> checkConnectionStatus() async {
+    try {
+      final result = await _channel.invokeMethod('checkConnectionStatus');
+      return result ?? false;
+    } catch (e) {
+      print('Failed to check connection status: $e');
+      return false;
+    }
+  }
+
   /// Forces a rebind of the UDP listener (useful when network changes)
   Future<bool> rebindNebula(String reason) async {
     try {

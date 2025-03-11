@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'nebula_bridge.dart';
-import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
@@ -29,11 +29,12 @@ class NebulaPage extends StatefulWidget {
 class _NebulaPageState extends State<NebulaPage> {
   final NebulaBridge _nebulaBridge = NebulaBridge();
   bool _isConnected = false;
-  String _status = "Disconnected";
+  String _status = "Checking status...";
   String _pingResult = "";
+  Timer? _statusCheckTimer;
   final TextEditingController _pingTargetController = TextEditingController();
 
-  // Your Nebula configuration in YAML format (converted from JSON)
+  // Your Nebula configuration in YAML format - replace with your own
   final String _nebulaConfig = '''
 pki:
   ca: |
@@ -104,7 +105,7 @@ firewall:
       groups: ["TestTenant"]
 ''';
 
-  // Your Nebula private key
+  // Your private key in PEM format
   final String _privateKey = '''
 -----BEGIN NEBULA X25519 PRIVATE KEY-----
 q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
@@ -116,6 +117,39 @@ q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
     super.initState();
     _pingTargetController.text =
         "100.64.0.1"; // Default ping target to lighthouse
+
+    // Check connection status on app start
+    _checkVpnStatus();
+
+    // Set up a periodic check every 5 seconds
+    _statusCheckTimer = Timer.periodic(Duration(seconds: 5), (timer) {
+      if (mounted) {
+        _checkVpnStatus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _statusCheckTimer?.cancel();
+    _pingTargetController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkVpnStatus() async {
+    try {
+      // Check the actual VPN connection status
+      bool isConnected = await _nebulaBridge.checkConnectionStatus();
+
+      if (mounted) {
+        setState(() {
+          _isConnected = isConnected;
+          _status = isConnected ? "Connected" : "Disconnected";
+        });
+      }
+    } catch (e) {
+      print('Error checking VPN status: $e');
+    }
   }
 
   Future<void> _connectVPN() async {
@@ -123,13 +157,33 @@ q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
       _status = "Connecting...";
     });
 
-    // Skip the test step since the method isn't available
-    final success = await _nebulaBridge.startNebula(_nebulaConfig, _privateKey);
+    try {
+      // Test the configuration first
+      final isValid = await _nebulaBridge.testConfig(
+        _nebulaConfig,
+        _privateKey,
+      );
 
-    setState(() {
-      _isConnected = success;
-      _status = success ? "Connected" : "Connection failed";
-    });
+      if (isValid) {
+        final success = await _nebulaBridge.startNebula(
+          _nebulaConfig,
+          _privateKey,
+        );
+
+        setState(() {
+          _isConnected = success;
+          _status = success ? "Connected" : "Connection failed";
+        });
+      } else {
+        setState(() {
+          _status = "Invalid configuration";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _status = "Error: ${e.toString()}";
+      });
+    }
   }
 
   Future<void> _disconnectVPN() async {
@@ -137,12 +191,18 @@ q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
       _status = "Disconnecting...";
     });
 
-    final success = await _nebulaBridge.stopNebula();
+    try {
+      final success = await _nebulaBridge.stopNebula();
 
-    setState(() {
-      _isConnected = !success;
-      _status = success ? "Disconnected" : "Failed to disconnect";
-    });
+      setState(() {
+        _isConnected = !success;
+        _status = success ? "Disconnected" : "Failed to disconnect";
+      });
+    } catch (e) {
+      setState(() {
+        _status = "Error: ${e.toString()}";
+      });
+    }
   }
 
   Future<void> _pingHost() async {
@@ -157,14 +217,20 @@ q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
       _pingResult = "Pinging...";
     });
 
-    final success = await _nebulaBridge.pingHost(_pingTargetController.text);
+    try {
+      final success = await _nebulaBridge.pingHost(_pingTargetController.text);
 
-    setState(() {
-      _pingResult =
-          success
-              ? "Ping to ${_pingTargetController.text} was successful"
-              : "Ping to ${_pingTargetController.text} failed";
-    });
+      setState(() {
+        _pingResult =
+            success
+                ? "Ping to ${_pingTargetController.text} was successful"
+                : "Ping to ${_pingTargetController.text} failed";
+      });
+    } catch (e) {
+      setState(() {
+        _pingResult = "Error: ${e.toString()}";
+      });
+    }
   }
 
   @override
@@ -247,6 +313,15 @@ q8UyTb2Xq3rx6srp/bMH5H3dHJAcz9RvWoX15ezOxbU=
                   ],
                 ),
               ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Manual refresh button
+            OutlinedButton.icon(
+              onPressed: _checkVpnStatus,
+              icon: Icon(Icons.refresh),
+              label: Text('Refresh Connection Status'),
             ),
           ],
         ),

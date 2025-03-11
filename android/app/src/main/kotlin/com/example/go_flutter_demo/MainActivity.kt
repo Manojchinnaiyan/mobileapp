@@ -70,6 +70,10 @@ class MainActivity: FlutterActivity() {
                         val success = nebulaBridge.pingHost(host)
                         result.success(success)
                     }
+                    "checkConnectionStatus" -> {
+                        val isConnected = nebulaBridge.checkConnectionStatus()
+                        result.success(isConnected)
+                    }
                     else -> {
                         result.notImplemented()
                     }
